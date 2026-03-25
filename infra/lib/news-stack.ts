@@ -345,7 +345,10 @@ export class NewsStack extends Stack {
             'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
           },
           StringLike: {
-            'token.actions.githubusercontent.com:sub': 'repo:codekansas/news:ref:refs/heads/master',
+            'token.actions.githubusercontent.com:sub': [
+              'repo:codekansas/news:ref:refs/heads/master',
+              'repo:codekansas/news:environment:production',
+            ],
           },
         },
         'sts:AssumeRoleWithWebIdentity',
