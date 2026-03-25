@@ -149,13 +149,13 @@ export class NewsStack extends Stack {
     const buildFunction = (id: string, entry: string, timeoutSeconds = 10) =>
       new NodejsFunction(this, id, {
         entry: path.join(projectRoot, entry),
-        runtime: Runtime.NODEJS_20_X,
+        runtime: Runtime.NODEJS_24_X,
         memorySize: 512,
         timeout: Duration.seconds(timeoutSeconds),
         environment: lambdaEnvironment,
         depsLockFilePath: path.join(projectRoot, 'pnpm-lock.yaml'),
         bundling: {
-          target: 'node20',
+          target: 'node24',
         },
       });
 

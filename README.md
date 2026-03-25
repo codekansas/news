@@ -21,6 +21,8 @@
 
 ## Local commands
 
+Use Node 24. The repo includes `.nvmrc` and declares `engines.node = 24.x`.
+
 ```bash
 pnpm install
 pnpm lint
