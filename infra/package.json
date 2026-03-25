@@ -1,0 +1,28 @@
+{
+  "name": "@news/infra",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "lint": "biome check bin lib scripts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "synth": "cdk synth",
+    "bootstrap": "cdk bootstrap aws://752725527807/us-east-1",
+    "deploy:stack": "cdk deploy --require-approval never",
+    "refresh": "tsx scripts/refresh-feeds.ts",
+    "smoke": "tsx scripts/smoke-test.ts",
+    "configure-github": "tsx scripts/configure-github.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudformation": "^3.758.0",
+    "@aws-sdk/client-lambda": "^3.758.0",
+    "aws-cdk-lib": "^2.188.0",
+    "constructs": "^10.4.2",
+    "source-map-support": "^0.5.21"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.1017.0",
+    "esbuild": "^0.25.1"
+  }
+}

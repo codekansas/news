@@ -1,0 +1,11 @@
+node_modules
+.DS_Store
+.pnpm-store
+dist
+cdk.out
+.env
+.env.*
+coverage
+vite.config.d.ts
+*.tsbuildinfo
+

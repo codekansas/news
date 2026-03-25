@@ -1,0 +1,25 @@
+{
+  "name": "news",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.27.0",
+  "scripts": {
+    "build": "pnpm --filter @news/web build && pnpm --filter @news/infra synth",
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "ci": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "bootstrap": "pnpm --filter @news/infra bootstrap",
+    "deploy:prod": "pnpm build && pnpm --filter @news/infra deploy:stack",
+    "refresh": "pnpm --filter @news/infra refresh",
+    "smoke": "pnpm --filter @news/infra smoke",
+    "configure-github": "pnpm --filter @news/infra configure-github"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^22.13.14",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.9"
+  }
+}
