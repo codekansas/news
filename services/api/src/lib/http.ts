@@ -18,6 +18,13 @@ export const textResponse = (statusCode: number, body: string) => ({
   body,
 });
 
+export const emptyResponse = (statusCode = 204) => ({
+  statusCode,
+  headers: {
+    'cache-control': 'no-store',
+  },
+});
+
 export const getPathParam = (
   pathParameters: Record<string, string | undefined> | undefined,
   name: string,

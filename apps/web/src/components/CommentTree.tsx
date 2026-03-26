@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { formatAge, renderCommentText } from '../lib/format';
+import { LoadingIndicator } from './LoadingIndicator';
 
 const CommentNodeView = ({
   comment,
@@ -38,13 +39,6 @@ const CommentNodeView = ({
               <tr>
                 <td className="ind">
                   <span className="ind-spacer" style={{ width: `${comment.depth * 40}px` }} />
-                </td>
-                <td className="votelinks" valign="top">
-                  <center>
-                    <a aria-label="upvote" href={`/item/${storyId}`} rel="noreferrer">
-                      <div className="votearrow" title="upvote" />
-                    </a>
-                  </center>
                 </td>
                 <td className="default">
                   <div style={{ marginTop: 2, marginBottom: -10 }}>
@@ -86,6 +80,12 @@ const CommentNodeView = ({
                         <button disabled={posting} onClick={() => void submitReply()} type="button">
                           add reply
                         </button>
+                        {posting ? (
+                          <>
+                            {' '}
+                            <LoadingIndicator compact inline label="Updating comments..." />
+                          </>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>

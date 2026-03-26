@@ -1,6 +1,14 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Aws, CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from 'aws-cdk-lib';
+import {
+  Aws,
+  CfnOutput,
+  CustomResource,
+  Duration,
+  RemovalPolicy,
+  Stack,
+  type StackProps,
+} from 'aws-cdk-lib';
 import { CorsHttpMethod, HttpApi, HttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
@@ -20,13 +28,19 @@ import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { Runtime } from 'aws-cdk-lib/aws-lambda';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
+import * as opensearchserverless from 'aws-cdk-lib/aws-opensearchserverless';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as route53Targets from 'aws-cdk-lib/aws-route53-targets';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
+import * as cr from 'aws-cdk-lib/custom-resources';
 import type { Construct } from 'constructs';
 
 const frontPageIndexName = 'front-page-index';
+const pastDayIndexName = 'past-day-index';
+const pushSubscriptionsEndpointIndexName = 'endpoint-index';
+const searchCollectionName = 'news-search';
+const searchIndexName = 'stories';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,6 +60,7 @@ const githubPermissions = [
   'iam:*',
   'lambda:*',
   'logs:*',
+  'aoss:*',
   'route53:*',
   's3:*',
   'ssm:*',
@@ -84,6 +99,17 @@ export class NewsStack extends Stack {
         type: dynamodb.AttributeType.NUMBER,
       },
     });
+    storiesTable.addGlobalSecondaryIndex({
+      indexName: pastDayIndexName,
+      partitionKey: {
+        name: 'publicationDate',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'publishedAtMs',
+        type: dynamodb.AttributeType.NUMBER,
+      },
+    });
 
     const commentsTable = new dynamodb.Table(this, 'CommentsTable', {
       partitionKey: {
@@ -99,6 +125,61 @@ export class NewsStack extends Stack {
         pointInTimeRecoveryEnabled: true,
       },
       removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    const favoritesTable = new dynamodb.Table(this, 'FavoritesTable', {
+      partitionKey: {
+        name: 'userId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'storyId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecoverySpecification: {
+        pointInTimeRecoveryEnabled: true,
+      },
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    const notificationsTable = new dynamodb.Table(this, 'NotificationsTable', {
+      partitionKey: {
+        name: 'userId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'notificationId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecoverySpecification: {
+        pointInTimeRecoveryEnabled: true,
+      },
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    const pushSubscriptionsTable = new dynamodb.Table(this, 'PushSubscriptionsTable', {
+      partitionKey: {
+        name: 'userId',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'endpoint',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecoverySpecification: {
+        pointInTimeRecoveryEnabled: true,
+      },
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+    pushSubscriptionsTable.addGlobalSecondaryIndex({
+      indexName: pushSubscriptionsEndpointIndexName,
+      partitionKey: {
+        name: 'endpoint',
+        type: dynamodb.AttributeType.STRING,
+      },
     });
 
     const usersTable = new dynamodb.Table(this, 'UsersTable', {
@@ -139,11 +220,102 @@ export class NewsStack extends Stack {
       enableTokenRevocation: true,
     });
 
+    const ensureVapidKeysFunction = new NodejsFunction(this, 'EnsureVapidKeysFunction', {
+      entry: path.join(projectRoot, 'infra/lib/ensure-vapid-keys.ts'),
+      runtime: Runtime.NODEJS_24_X,
+      memorySize: 256,
+      timeout: Duration.seconds(30),
+      depsLockFilePath: path.join(projectRoot, 'pnpm-lock.yaml'),
+      bundling: {
+        target: 'node24',
+      },
+    });
+    ensureVapidKeysFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'secretsmanager:CreateSecret',
+          'secretsmanager:DescribeSecret',
+          'secretsmanager:GetSecretValue',
+          'secretsmanager:PutSecretValue',
+        ],
+        resources: [
+          `arn:aws:secretsmanager:${this.region}:${this.account}:secret:news/web-push-vapid*`,
+        ],
+      }),
+    );
+
+    const vapidKeysProvider = new cr.Provider(this, 'VapidKeysProvider', {
+      onEventHandler: ensureVapidKeysFunction,
+    });
+    const vapidKeysResource = new CustomResource(this, 'VapidKeysResource', {
+      serviceToken: vapidKeysProvider.serviceToken,
+      properties: {
+        secretName: 'news/web-push-vapid',
+      },
+    });
+
+    const searchEncryptionPolicy = new opensearchserverless.CfnSecurityPolicy(
+      this,
+      'SearchEncryptionPolicy',
+      {
+        name: 'news-search-encryption',
+        type: 'encryption',
+        policy: JSON.stringify({
+          Rules: [
+            {
+              ResourceType: 'collection',
+              Resource: [`collection/${searchCollectionName}`],
+            },
+          ],
+          AWSOwnedKey: true,
+        }),
+      },
+    );
+    const searchNetworkPolicy = new opensearchserverless.CfnSecurityPolicy(
+      this,
+      'SearchNetworkPolicy',
+      {
+        name: 'news-search-network',
+        type: 'network',
+        policy: JSON.stringify([
+          {
+            Rules: [
+              {
+                ResourceType: 'collection',
+                Resource: [`collection/${searchCollectionName}`],
+              },
+              {
+                ResourceType: 'dashboard',
+                Resource: [`collection/${searchCollectionName}`],
+              },
+            ],
+            AllowFromPublic: true,
+          },
+        ]),
+      },
+    );
+    const searchCollection = new opensearchserverless.CfnCollection(this, 'SearchCollection', {
+      description: 'OpenSearch Serverless collection for AI News story search.',
+      name: searchCollectionName,
+      type: 'SEARCH',
+    });
+    searchCollection.addDependency(searchEncryptionPolicy);
+    searchCollection.addDependency(searchNetworkPolicy);
+
     const lambdaEnvironment = {
       STORIES_TABLE_NAME: storiesTable.tableName,
       COMMENTS_TABLE_NAME: commentsTable.tableName,
+      FAVORITES_TABLE_NAME: favoritesTable.tableName,
+      NOTIFICATIONS_TABLE_NAME: notificationsTable.tableName,
+      PUSH_SUBSCRIPTIONS_TABLE_NAME: pushSubscriptionsTable.tableName,
       USERS_TABLE_NAME: usersTable.tableName,
       FRONT_PAGE_INDEX_NAME: frontPageIndexName,
+      PAST_DAY_INDEX_NAME: pastDayIndexName,
+      PUSH_SUBSCRIPTIONS_ENDPOINT_INDEX_NAME: pushSubscriptionsEndpointIndexName,
+      SEARCH_COLLECTION_ENDPOINT: searchCollection.attrCollectionEndpoint,
+      SEARCH_INDEX_NAME: searchIndexName,
+      VAPID_SECRET_ARN: vapidKeysResource.getAttString('secretArn'),
     };
 
     const buildFunction = (id: string, entry: string, timeoutSeconds = 10) =>
@@ -171,31 +343,182 @@ export class NewsStack extends Stack {
       'ListCommentsFunction',
       'services/api/src/handlers/list-comments.ts',
     );
+    const listRecentCommentsFunction = buildFunction(
+      'ListRecentCommentsFunction',
+      'services/api/src/handlers/list-recent-comments.ts',
+    );
+    const listUserCommentsFunction = buildFunction(
+      'ListUserCommentsFunction',
+      'services/api/src/handlers/list-user-comments.ts',
+    );
+    const listUserFavoritesFunction = buildFunction(
+      'ListUserFavoritesFunction',
+      'services/api/src/handlers/list-user-favorites.ts',
+    );
+    const getFavoriteFunction = buildFunction(
+      'GetFavoriteFunction',
+      'services/api/src/handlers/get-favorite.ts',
+    );
+    const putFavoriteFunction = buildFunction(
+      'PutFavoriteFunction',
+      'services/api/src/handlers/put-favorite.ts',
+    );
+    const deleteFavoriteFunction = buildFunction(
+      'DeleteFavoriteFunction',
+      'services/api/src/handlers/delete-favorite.ts',
+    );
+    const listNotificationsFunction = buildFunction(
+      'ListNotificationsFunction',
+      'services/api/src/handlers/list-notifications.ts',
+    );
+    const markNotificationsReadFunction = buildFunction(
+      'MarkNotificationsReadFunction',
+      'services/api/src/handlers/mark-notifications-read.ts',
+    );
+    const putPushSubscriptionFunction = buildFunction(
+      'PutPushSubscriptionFunction',
+      'services/api/src/handlers/put-push-subscription.ts',
+    );
+    const deletePushSubscriptionFunction = buildFunction(
+      'DeletePushSubscriptionFunction',
+      'services/api/src/handlers/delete-push-subscription.ts',
+    );
+    const searchStoriesFunction = buildFunction(
+      'SearchStoriesFunction',
+      'services/api/src/handlers/search-stories.ts',
+    );
     const createCommentFunction = buildFunction(
       'CreateCommentFunction',
       'services/api/src/handlers/create-comment.ts',
     );
     const getMeFunction = buildFunction('GetMeFunction', 'services/api/src/handlers/get-me.ts');
+    const updateMeFunction = buildFunction(
+      'UpdateMeFunction',
+      'services/api/src/handlers/update-me.ts',
+    );
     const refreshFeedsFunction = buildFunction(
       'RefreshFeedsFunction',
       'services/api/src/handlers/refresh-feeds.ts',
-      60,
+      300,
     );
     const healthFunction = buildFunction('HealthFunction', 'services/api/src/handlers/health.ts');
 
     storiesTable.grantReadData(listStoriesFunction);
     storiesTable.grantReadData(getStoryFunction);
+    storiesTable.grantReadData(listRecentCommentsFunction);
+    storiesTable.grantReadData(listUserCommentsFunction);
+    storiesTable.grantReadData(listUserFavoritesFunction);
+    storiesTable.grantReadData(putFavoriteFunction);
+    storiesTable.grantReadData(searchStoriesFunction);
     storiesTable.grantReadWriteData(refreshFeedsFunction);
     storiesTable.grantReadWriteData(createCommentFunction);
     commentsTable.grantReadData(listCommentsFunction);
+    commentsTable.grantReadData(listRecentCommentsFunction);
+    commentsTable.grantReadData(listUserCommentsFunction);
     commentsTable.grantReadWriteData(createCommentFunction);
+    favoritesTable.grantReadData(listUserFavoritesFunction);
+    favoritesTable.grantReadData(getFavoriteFunction);
+    favoritesTable.grantReadWriteData(putFavoriteFunction);
+    favoritesTable.grantReadWriteData(deleteFavoriteFunction);
+    notificationsTable.grantReadData(listNotificationsFunction);
+    notificationsTable.grantReadWriteData(markNotificationsReadFunction);
+    notificationsTable.grantReadWriteData(createCommentFunction);
+    pushSubscriptionsTable.grantReadWriteData(putPushSubscriptionFunction);
+    pushSubscriptionsTable.grantReadWriteData(deletePushSubscriptionFunction);
+    pushSubscriptionsTable.grantReadWriteData(createCommentFunction);
     usersTable.grantReadWriteData(getMeFunction);
+    usersTable.grantReadData(listUserCommentsFunction);
+    usersTable.grantReadData(listUserFavoritesFunction);
+    usersTable.grantReadWriteData(updateMeFunction);
     usersTable.grantReadWriteData(createCommentFunction);
+    createCommentFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [vapidKeysResource.getAttString('secretArn')],
+      }),
+    );
+
+    refreshFeedsFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['aoss:APIAccessAll'],
+        resources: [searchCollection.attrArn],
+      }),
+    );
+    searchStoriesFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['aoss:APIAccessAll'],
+        resources: [searchCollection.attrArn],
+      }),
+    );
+
+    const refreshFeedsRole = refreshFeedsFunction.role;
+    const searchStoriesRole = searchStoriesFunction.role;
+    if (!refreshFeedsRole || !searchStoriesRole) {
+      throw new Error('Expected Lambda execution roles to be defined.');
+    }
+
+    new opensearchserverless.CfnAccessPolicy(this, 'SearchDataAccessPolicy', {
+      name: 'news-search-access',
+      type: 'data',
+      policy: JSON.stringify([
+        {
+          Description: 'Read access for the AI News search Lambda.',
+          Principal: [searchStoriesRole.roleArn],
+          Rules: [
+            {
+              ResourceType: 'collection',
+              Resource: [`collection/${searchCollectionName}`],
+              Permission: ['aoss:DescribeCollectionItems'],
+            },
+            {
+              ResourceType: 'index',
+              Resource: [`index/${searchCollectionName}/*`],
+              Permission: ['aoss:DescribeIndex', 'aoss:ReadDocument'],
+            },
+          ],
+        },
+        {
+          Description: 'Write access for the AI News refresh Lambda.',
+          Principal: [refreshFeedsRole.roleArn],
+          Rules: [
+            {
+              ResourceType: 'collection',
+              Resource: [`collection/${searchCollectionName}`],
+              Permission: [
+                'aoss:CreateCollectionItems',
+                'aoss:DescribeCollectionItems',
+                'aoss:UpdateCollectionItems',
+              ],
+            },
+            {
+              ResourceType: 'index',
+              Resource: [`index/${searchCollectionName}/*`],
+              Permission: [
+                'aoss:CreateIndex',
+                'aoss:DescribeIndex',
+                'aoss:ReadDocument',
+                'aoss:UpdateIndex',
+                'aoss:WriteDocument',
+              ],
+            },
+          ],
+        },
+      ]),
+    }).addDependency(searchCollection);
 
     const api = new HttpApi(this, 'NewsApi', {
       corsPreflight: {
         allowHeaders: ['authorization', 'content-type'],
-        allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.POST, CorsHttpMethod.OPTIONS],
+        allowMethods: [
+          CorsHttpMethod.DELETE,
+          CorsHttpMethod.GET,
+          CorsHttpMethod.POST,
+          CorsHttpMethod.PUT,
+          CorsHttpMethod.OPTIONS,
+        ],
         allowOrigins: ['https://news.bolte.cc', 'http://localhost:5173'],
       },
     });
@@ -220,6 +543,89 @@ export class NewsStack extends Stack {
       integration: new HttpLambdaIntegration('ListCommentsIntegration', listCommentsFunction),
     });
     api.addRoutes({
+      path: '/api/comments',
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration(
+        'ListRecentCommentsIntegration',
+        listRecentCommentsFunction,
+      ),
+    });
+    api.addRoutes({
+      path: '/api/users/{username}/comments',
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration(
+        'ListUserCommentsIntegration',
+        listUserCommentsFunction,
+      ),
+    });
+    api.addRoutes({
+      path: '/api/users/{username}/favorites',
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration(
+        'ListUserFavoritesIntegration',
+        listUserFavoritesFunction,
+      ),
+    });
+    api.addRoutes({
+      path: '/api/stories/{storyId}/favorite',
+      methods: [HttpMethod.GET],
+      authorizer: userAuthorizer,
+      integration: new HttpLambdaIntegration('GetFavoriteIntegration', getFavoriteFunction),
+    });
+    api.addRoutes({
+      path: '/api/stories/{storyId}/favorite',
+      methods: [HttpMethod.PUT],
+      authorizer: userAuthorizer,
+      integration: new HttpLambdaIntegration('PutFavoriteIntegration', putFavoriteFunction),
+    });
+    api.addRoutes({
+      path: '/api/stories/{storyId}/favorite',
+      methods: [HttpMethod.DELETE],
+      authorizer: userAuthorizer,
+      integration: new HttpLambdaIntegration('DeleteFavoriteIntegration', deleteFavoriteFunction),
+    });
+    api.addRoutes({
+      path: '/api/notifications',
+      methods: [HttpMethod.GET],
+      authorizer: userAuthorizer,
+      integration: new HttpLambdaIntegration(
+        'ListNotificationsIntegration',
+        listNotificationsFunction,
+      ),
+    });
+    api.addRoutes({
+      path: '/api/notifications/read',
+      methods: [HttpMethod.POST],
+      authorizer: userAuthorizer,
+      integration: new HttpLambdaIntegration(
+        'MarkNotificationsReadIntegration',
+        markNotificationsReadFunction,
+      ),
+    });
+    api.addRoutes({
+      path: '/api/notifications/push-subscription',
+      methods: [HttpMethod.PUT],
+      authorizer: userAuthorizer,
+      integration: new HttpLambdaIntegration(
+        'PutPushSubscriptionIntegration',
+        putPushSubscriptionFunction,
+      ),
+    });
+    api.addRoutes({
+      path: '/api/notifications/push-subscription',
+      methods: [HttpMethod.DELETE],
+      authorizer: userAuthorizer,
+      integration: new HttpLambdaIntegration(
+        'DeletePushSubscriptionIntegration',
+        deletePushSubscriptionFunction,
+      ),
+    });
+    api.addRoutes({
+      path: '/api/search',
+      methods: [HttpMethod.GET],
+      integration: new HttpLambdaIntegration('SearchStoriesIntegration', searchStoriesFunction),
+    });
+    api.addRoutes({
       path: '/api/stories/{storyId}/comments',
       methods: [HttpMethod.POST],
       authorizer: userAuthorizer,
@@ -230,6 +636,12 @@ export class NewsStack extends Stack {
       methods: [HttpMethod.GET],
       authorizer: userAuthorizer,
       integration: new HttpLambdaIntegration('GetMeIntegration', getMeFunction),
+    });
+    api.addRoutes({
+      path: '/api/me',
+      methods: [HttpMethod.PUT],
+      authorizer: userAuthorizer,
+      integration: new HttpLambdaIntegration('UpdateMeIntegration', updateMeFunction),
     });
     api.addRoutes({
       path: '/api/health',
@@ -317,6 +729,7 @@ export class NewsStack extends Stack {
           JSON.stringify(
             {
               apiBaseUrl: '/api',
+              pushPublicKey: vapidKeysResource.getAttString('publicKey'),
               region: this.region,
               userPoolId: userPool.userPoolId,
               userPoolClientId: userPoolClient.userPoolClientId,

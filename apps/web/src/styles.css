@@ -107,6 +107,32 @@ a:visited {
   color: #000;
 }
 
+.mailbox-link {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+  vertical-align: middle;
+}
+
+.mailbox-link:link,
+.mailbox-link:visited {
+  color: #000;
+}
+
+.mailbox-link-unread {
+  font-weight: bold;
+}
+
+.mailbox-icon {
+  display: block;
+}
+
+.mailbox-badge {
+  font-size: 8pt;
+  line-height: 1;
+  min-width: 8px;
+}
+
 .subtext a:link,
 .subtext a:visited,
 .comhead a:link,
@@ -133,7 +159,7 @@ a:visited {
   overflow-wrap: anywhere;
 }
 
-.commtext p {
+.default p {
   margin-top: 8px;
   margin-bottom: 0;
 }
@@ -164,9 +190,59 @@ a:visited {
   color: #000;
 }
 
-.app-loading,
+.story-action-link {
+  appearance: none;
+  background: none;
+  border: 0;
+  color: #000;
+  cursor: pointer;
+  font: inherit;
+  margin: 0;
+  padding: 0;
+  text-decoration: underline;
+  vertical-align: baseline;
+}
+
+.story-action-link:disabled {
+  color: #828282;
+  cursor: default;
+  text-decoration: none;
+}
+
+.loading-indicator {
+  align-items: center;
+  color: #828282;
+  display: inline-flex;
+  font-family: Verdana, Geneva, sans-serif;
+  font-size: 10pt;
+  gap: 8px;
+}
+
+.loading-indicator-block,
 .app-error {
   padding: 16px;
+}
+
+.loading-indicator-compact {
+  font-size: 8pt;
+  gap: 5px;
+}
+
+.loading-spinner {
+  animation: hn-loading-spin 0.7s linear infinite;
+  border: 2px solid rgb(130 130 130 / 35%);
+  border-radius: 50%;
+  border-top-color: #ff6600;
+  display: inline-block;
+  flex: 0 0 auto;
+  height: 12px;
+  width: 12px;
+}
+
+.loading-indicator-compact .loading-spinner {
+  border-width: 1px;
+  height: 9px;
+  width: 9px;
 }
 
 .app-error,
@@ -178,8 +254,224 @@ a:visited {
   padding: 18px;
 }
 
+.past-header-date {
+  color: #f6f6ef;
+}
+
+.past-page-intro {
+  margin-top: 6px;
+  margin-right: 12px;
+  margin-bottom: 14px;
+  margin-left: 36px;
+}
+
+.past-page-nav {
+  margin-top: 9px;
+}
+
+.hnmore,
+.hnmore a:link,
+.hnmore a:visited {
+  color: #828282;
+}
+
+.hnmore {
+  text-decoration: underline;
+}
+
+.search-page-intro,
+.search-page-empty,
+.search-page-footer {
+  margin-left: 8px;
+  margin-bottom: 12px;
+}
+
+.search-page-meta {
+  margin-top: 4px;
+}
+
+.search-page-query {
+  color: #000;
+}
+
+.comments-page {
+  padding: 0 0 18px;
+}
+
+.comments-page-entry {
+  margin: 0 0 16px 8px;
+}
+
+.comments-page-text {
+  margin-top: 6px;
+}
+
+.comments-page-story-link:link,
+.comments-page-story-link:visited,
+.comments-page-more a:link,
+.comments-page-more a:visited {
+  color: #000;
+}
+
+.comments-page-more {
+  margin: 12px 0 0 8px;
+}
+
+.mailbox-page,
+.mailbox-page-empty,
+.mailbox-page-intro,
+.mailbox-page-toolbar {
+  margin-bottom: 12px;
+  margin-left: 8px;
+}
+
+.mailbox-page-toolbar {
+  color: #828282;
+}
+
+.mailbox-action {
+  color: #000;
+}
+
+.mailbox-list {
+  padding-bottom: 18px;
+}
+
+.mailbox-entry {
+  margin: 0 0 16px 8px;
+}
+
+.mailbox-entry-unread .comhead {
+  color: #000;
+}
+
+.mailbox-entry-text {
+  margin-top: 6px;
+}
+
+.activity-page-intro,
+.activity-page-empty,
+.activity-page-note,
+.change-password-page {
+  margin-bottom: 12px;
+  margin-left: 8px;
+}
+
+.activity-page-note {
+  color: #828282;
+}
+
+.user-page {
+  padding: 0 0 18px 0;
+}
+
 .auth-message {
   color: #0a6f2d;
+}
+
+.hn-user-table {
+  margin-left: 5px;
+}
+
+.hn-user-table td {
+  padding-top: 3px;
+  vertical-align: top;
+}
+
+.hn-user-label {
+  padding-right: 14px;
+  white-space: nowrap;
+}
+
+.hn-user-value {
+  color: #000;
+}
+
+.hn-user-muted-value {
+  color: #828282;
+}
+
+.hn-user-input-wide,
+.hn-user-input-medium,
+.hn-user-input-color,
+.hn-user-textarea {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.hn-user-field-cell {
+  width: min(100%, 1024px);
+}
+
+.hn-user-input-wide {
+  width: 100%;
+}
+
+.hn-user-input-medium {
+  width: min(100%, 280px);
+}
+
+.hn-user-input-color {
+  width: min(100%, 344px);
+}
+
+.hn-user-about-wrap {
+  align-items: flex-end;
+  display: inline-flex;
+  gap: 8px;
+  width: min(100%, 1038px);
+}
+
+.hn-user-textarea {
+  flex: 1 1 auto;
+  height: 352px;
+  width: 100%;
+}
+
+.hn-user-help {
+  flex: 0 0 auto;
+  padding-bottom: 5px;
+  white-space: nowrap;
+}
+
+.hn-user-help a:link,
+.hn-user-help a:visited {
+  color: #828282;
+  text-decoration: none;
+}
+
+.hn-user-note {
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+}
+
+.hn-user-links {
+  line-height: 1.45;
+  padding-top: 10px !important;
+}
+
+.hn-user-links a:link,
+.hn-user-links a:visited {
+  color: #000;
+  text-decoration: underline;
+}
+
+.hn-user-annotation {
+  color: #828282;
+  font-style: italic;
+}
+
+.hn-user-submit {
+  padding-top: 18px !important;
+}
+
+.change-password-table td {
+  padding-right: 8px;
+  padding-top: 3px;
+}
+
+.change-password-submit {
+  padding-top: 12px;
 }
 
 .ind-spacer {
@@ -197,6 +489,16 @@ a:visited {
 
 .comment-login-hint {
   margin: 0;
+}
+
+@keyframes hn-loading-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media only screen and (min-width: 300px) and (max-width: 750px) {
@@ -239,6 +541,28 @@ a:visited {
 
   .subtext {
     font-size: 9pt;
+  }
+
+  .hn-user-input-wide,
+  .hn-user-input-medium,
+  .hn-user-input-color,
+  .hn-user-textarea {
+    width: 90%;
+  }
+
+  .hn-user-about-wrap {
+    display: block;
+    width: 100%;
+  }
+
+  .hn-user-help {
+    display: inline-block;
+    padding-bottom: 0;
+    padding-top: 6px;
+  }
+
+  .past-page-intro {
+    margin-left: 12px;
   }
 
   .votearrow {
