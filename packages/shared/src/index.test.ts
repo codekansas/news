@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { buildCommentTree, buildStoryId, pickRandomPoints } from './index';
+import { FEED_SOURCES, buildCommentTree, buildStoryId, pickRandomPoints } from './index';
 
 describe('pickRandomPoints', () => {
   test('is deterministic for a given seed', () => {
@@ -44,5 +44,20 @@ describe('buildCommentTree', () => {
     expect(tree).toHaveLength(1);
     expect(tree[0]?.children).toHaveLength(1);
     expect(tree[0]?.children[0]?.commentId).toBe('child');
+  });
+});
+
+describe('feed sources', () => {
+  test('keeps feed urls unique', () => {
+    const urls = FEED_SOURCES.map((source) => source.url);
+    expect(new Set(urls).size).toBe(urls.length);
+  });
+
+  test('includes the newly added gist feeds', () => {
+    expect(FEED_SOURCES.some((source) => source.url === 'https://antirez.com/rss')).toBe(true);
+    expect(FEED_SOURCES.some((source) => source.url === 'https://rss.arxiv.org/rss/cs.AI')).toBe(
+      true,
+    );
+    expect(FEED_SOURCES.length).toBeGreaterThan(70);
   });
 });

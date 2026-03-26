@@ -1,6 +1,6 @@
 # news.bolte.cc
 
-`news.bolte.cc` is a serverless Hacker News clone that keeps the original visual language while replacing user submissions with an RSS-driven mix of Hacker News-adjacent sources such as HNRSS, LessWrong, Astral Codex Ten, and major engineering blogs.
+`news.bolte.cc` is a serverless AI News app that keeps the original Hacker News visual language while replacing user submissions with an RSS-driven mix of Hacker News-adjacent sources such as HNRSS, LessWrong, Astral Codex Ten, and major engineering blogs.
 
 ## Stack
 

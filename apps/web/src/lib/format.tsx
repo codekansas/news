@@ -47,9 +47,14 @@ export const renderCommentText = (text: string): ReactNode[] => {
   const paragraphs = text.split(/\n{2,}/).filter(Boolean);
   let cursor = 0;
 
-  return paragraphs.map((paragraph) => {
+  return paragraphs.map((paragraph, index) => {
     const key = `${cursor}-${paragraph}`;
     cursor += paragraph.length;
+
+    if (index === 0) {
+      return <span key={key}>{linkify(paragraph)}</span>;
+    }
+
     return <p key={key}>{linkify(paragraph)}</p>;
   });
 };

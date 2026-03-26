@@ -1,21 +1,33 @@
 import type { CommentTreeNode, RuntimeConfig, Story } from '@news/shared';
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { CommentTree } from '../components/CommentTree';
 import { Layout } from '../components/Layout';
-import { getComments, getStory, postComment } from '../lib/api';
+import { LoadingIndicator } from '../components/LoadingIndicator';
+import {
+  deleteFavorite,
+  getComments,
+  getFavoriteStatus,
+  getStory,
+  postComment,
+  putFavorite,
+} from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { formatAge, renderCommentText } from '../lib/format';
 
 export const ItemPage = ({ config }: { config: RuntimeConfig }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { storyId = '' } = useParams();
   const { profile, status } = useAuth();
   const [story, setStory] = useState<Story | null>(null);
   const [comments, setComments] = useState<CommentTreeNode[]>([]);
   const [commentText, setCommentText] = useState('');
   const [posting, setPosting] = useState(false);
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const reload = async () => {
     const [storyResponse, commentsResponse] = await Promise.all([
@@ -29,16 +41,23 @@ export const ItemPage = ({ config }: { config: RuntimeConfig }) => {
   useEffect(() => {
     let cancelled = false;
 
+    setLoading(true);
+    setError(null);
+    setStory(null);
+    setComments([]);
+
     Promise.all([getStory(config, storyId), getComments(config, storyId)])
       .then(([storyResponse, commentsResponse]) => {
         if (!cancelled) {
           setStory(storyResponse.story);
           setComments(commentsResponse.comments);
+          setLoading(false);
         }
       })
       .catch((loadError) => {
         if (!cancelled) {
           setError(loadError instanceof Error ? loadError.message : 'Unable to load the story.');
+          setLoading(false);
         }
       });
 
@@ -46,6 +65,51 @@ export const ItemPage = ({ config }: { config: RuntimeConfig }) => {
       cancelled = true;
     };
   }, [config, storyId]);
+
+  useEffect(() => {
+    if (!location.hash || comments.length === 0) {
+      return;
+    }
+
+    const commentId = location.hash.slice(1);
+    const timeoutId = window.setTimeout(() => {
+      const commentElement = document.getElementById(commentId);
+      if (commentElement) {
+        commentElement.scrollIntoView({ block: 'start' });
+      }
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [comments, location.hash]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (status !== 'authenticated') {
+      setIsFavorite(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    getFavoriteStatus(config, storyId)
+      .then((response) => {
+        if (!cancelled) {
+          setIsFavorite(response.isFavorite);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIsFavorite(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [config, status, storyId]);
 
   const submitComment = async (parentId: string | null, text: string) => {
     if (!text.trim()) {
@@ -66,6 +130,36 @@ export const ItemPage = ({ config }: { config: RuntimeConfig }) => {
     }
   };
 
+  const toggleFavorite = async () => {
+    if (!story) {
+      return;
+    }
+
+    if (status !== 'authenticated') {
+      navigate(`/login?goto=${encodeURIComponent(`/item/${storyId}`)}`);
+      return;
+    }
+
+    setFavoriteBusy(true);
+    setError(null);
+
+    try {
+      if (isFavorite) {
+        await deleteFavorite(config, storyId);
+        setIsFavorite(false);
+      } else {
+        await putFavorite(config, storyId);
+        setIsFavorite(true);
+      }
+    } catch (favoriteError) {
+      setError(
+        favoriteError instanceof Error ? favoriteError.message : 'Unable to update favorite.',
+      );
+    } finally {
+      setFavoriteBusy(false);
+    }
+  };
+
   if (error && !story) {
     return (
       <Layout currentPage="item">
@@ -74,10 +168,10 @@ export const ItemPage = ({ config }: { config: RuntimeConfig }) => {
     );
   }
 
-  if (!story) {
+  if (loading || !story) {
     return (
       <Layout currentPage="item">
-        <div className="app-loading">Loading story…</div>
+        <LoadingIndicator label="Loading story..." />
       </Layout>
     );
   }
@@ -89,13 +183,6 @@ export const ItemPage = ({ config }: { config: RuntimeConfig }) => {
           <tr className="athing submission" id={story.id}>
             <td align="right" className="title" valign="top">
               <span className="rank" />
-            </td>
-            <td className="votelinks" valign="top">
-              <center>
-                <a aria-label="upvote" href={story.url} rel="noreferrer" target="_blank">
-                  <div className="votearrow" title="upvote" />
-                </a>
-              </center>
             </td>
             <td className="title">
               <span className="titleline">
@@ -114,7 +201,7 @@ export const ItemPage = ({ config }: { config: RuntimeConfig }) => {
             </td>
           </tr>
           <tr>
-            <td colSpan={2} />
+            <td />
             <td className="subtext">
               <span className="subline">
                 <span className="score">{story.points} points</span> by{' '}
@@ -122,13 +209,32 @@ export const ItemPage = ({ config }: { config: RuntimeConfig }) => {
                 <span className="age" title={story.publishedAt}>
                   <Link to={`/item/${story.id}`}>{formatAge(story.publishedAt)}</Link>
                 </span>{' '}
-                | <span>{story.sourceTitle}</span> |{' '}
-                <Link to={`/item/${story.id}`}>{story.commentCount} comments</Link>
+                | <span>{story.sourceTitle}</span>{' '}
+                {status === 'authenticated' ? (
+                  <>
+                    |{' '}
+                    <button
+                      className="story-action-link"
+                      disabled={favoriteBusy}
+                      onClick={() => void toggleFavorite()}
+                      type="button"
+                    >
+                      {isFavorite ? 'unfavorite' : 'favorite'}
+                    </button>{' '}
+                  </>
+                ) : null}
+                | <Link to={`/item/${story.id}`}>{story.commentCount} comments</Link>
+                {favoriteBusy ? (
+                  <>
+                    {' '}
+                    <LoadingIndicator compact inline label="Saving..." />
+                  </>
+                ) : null}
               </span>
             </td>
           </tr>
           <tr>
-            <td colSpan={2} />
+            <td />
             <td>
               <div className="toptext">
                 {story.summary ? <p>{story.summary}</p> : null}
@@ -140,7 +246,7 @@ export const ItemPage = ({ config }: { config: RuntimeConfig }) => {
           </tr>
           <tr style={{ height: 6 }} />
           <tr>
-            <td colSpan={2} />
+            <td />
             <td>
               {status === 'authenticated' && profile ? (
                 <form
@@ -160,6 +266,12 @@ export const ItemPage = ({ config }: { config: RuntimeConfig }) => {
                   <br />
                   <br />
                   <input disabled={posting} type="submit" value="add comment" />
+                  {posting ? (
+                    <>
+                      {' '}
+                      <LoadingIndicator compact inline label="Updating comments..." />
+                    </>
+                  ) : null}
                 </form>
               ) : (
                 <p className="comment-login-hint">

@@ -3,21 +3,24 @@ import { Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import { formatAge } from '../lib/format';
 
-export const StoryTable = ({ stories }: { stories: StorySummary[] }) => (
+export const StoryTable = ({
+  stories,
+  startRank = 1,
+  moreLink,
+  showSourceTitle = true,
+}: {
+  stories: StorySummary[];
+  startRank?: number;
+  moreLink?: string | null;
+  showSourceTitle?: boolean;
+}) => (
   <table border={0} cellPadding={0} cellSpacing={0}>
     <tbody>
       {stories.map((story, index) => (
         <Fragment key={story.id}>
           <tr className="athing submission" id={story.id}>
             <td align="right" className="title" valign="top">
-              <span className="rank">{index + 1}.</span>
-            </td>
-            <td className="votelinks" valign="top">
-              <center>
-                <a aria-label="upvote" href={story.url} rel="noreferrer" target="_blank">
-                  <div className="votearrow" title="upvote" />
-                </a>
-              </center>
+              <span className="rank">{startRank + index}.</span>
             </td>
             <td className="title">
               <span className="titleline">
@@ -36,7 +39,7 @@ export const StoryTable = ({ stories }: { stories: StorySummary[] }) => (
             </td>
           </tr>
           <tr>
-            <td colSpan={2} />
+            <td />
             <td className="subtext">
               <span className="subline">
                 <span className="score" id={`score_${story.id}`}>
@@ -46,7 +49,12 @@ export const StoryTable = ({ stories }: { stories: StorySummary[] }) => (
                 <span className="age" title={story.publishedAt}>
                   <Link to={`/item/${story.id}`}>{formatAge(story.publishedAt)}</Link>
                 </span>{' '}
-                | <span>{story.sourceTitle}</span> |{' '}
+                {showSourceTitle ? (
+                  <>
+                    | <span>{story.sourceTitle}</span>{' '}
+                  </>
+                ) : null}
+                |{' '}
                 <Link to={`/item/${story.id}`}>
                   {story.commentCount > 0 ? `${story.commentCount} comments` : 'discuss'}
                 </Link>
@@ -57,6 +65,14 @@ export const StoryTable = ({ stories }: { stories: StorySummary[] }) => (
         </Fragment>
       ))}
       <tr className="morespace" style={{ height: 10 }} />
+      {moreLink ? (
+        <tr>
+          <td />
+          <td className="title">
+            <Link to={moreLink}>More</Link>
+          </td>
+        </tr>
+      ) : null}
     </tbody>
   </table>
 );

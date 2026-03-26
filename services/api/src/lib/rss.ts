@@ -8,10 +8,12 @@ import {
   stripHtml,
 } from '@news/shared';
 import Parser from 'rss-parser';
+import { syncSearchIndexFromStoriesTable } from './search';
 import { upsertStory } from './stories';
 
 type ParsedItem = {
   title?: string;
+  description?: string;
   link?: string;
   guid?: string;
   isoDate?: string;
@@ -25,6 +27,8 @@ type RankedStory = Story & {
 };
 
 const parser = new Parser<Record<string, never>, ParsedItem>();
+const feedRequestBatchSize = 20;
+const feedRequestTimeoutMs = 10_000;
 
 const categoryPriority: Record<FeedSource['category'], number> = {
   'hacker-news': 3,
@@ -58,6 +62,19 @@ const summarizeText = (value: string | undefined, limit: number): string | null 
   return clean.slice(0, limit);
 };
 
+const extractStoryContent = (source: FeedSource, item: ParsedItem) => {
+  const rawContent = item.content ?? item.contentSnippet ?? item.description;
+  if (!rawContent) {
+    return undefined;
+  }
+
+  if (source.key !== 'hn-frontpage') {
+    return rawContent;
+  }
+
+  return rawContent.replace(/<hr[\s\S]*$/i, '').trim();
+};
+
 const buildRankingScore = (source: FeedSource, publishedAt: string, points: number): number => {
   const publishedAtMs = new Date(publishedAt).getTime();
   return (
@@ -65,12 +82,34 @@ const buildRankingScore = (source: FeedSource, publishedAt: string, points: numb
   );
 };
 
+const withTimeout = async <TValue>(
+  promise: Promise<TValue>,
+  timeoutMs: number,
+  sourceUrl: string,
+): Promise<TValue> =>
+  new Promise<TValue>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`Timed out loading ${sourceUrl}.`));
+    }, timeoutMs);
+
+    void promise.then(
+      (value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      },
+    );
+  });
+
 const normalizeStory = (source: FeedSource, item: ParsedItem): RankedStory | null => {
   if (!item.title) {
     return null;
   }
 
-  const rawUrl = item.link ?? item.guid;
+  const rawUrl = item.link;
   if (!rawUrl) {
     return null;
   }
@@ -82,11 +121,16 @@ const normalizeStory = (source: FeedSource, item: ParsedItem): RankedStory | nul
     return null;
   }
 
+  if (source.key === 'hn-frontpage' && new URL(canonicalUrl).hostname === 'news.ycombinator.com') {
+    return null;
+  }
+
   const publishedAt = item.isoDate ?? item.pubDate ?? new Date().toISOString();
   const { siteLabel, siteUrl } = buildSiteLabel(canonicalUrl);
   const storyId = buildStoryId(source.key, canonicalUrl);
   const seedInput = `${source.key}:${canonicalUrl}`;
   const points = pickRandomPoints(seedInput);
+  const storyContent = extractStoryContent(source, item);
 
   return {
     id: storyId,
@@ -100,40 +144,60 @@ const normalizeStory = (source: FeedSource, item: ParsedItem): RankedStory | nul
     submittedBy: pickRandomSubmitter(seedInput),
     points,
     publishedAt: new Date(publishedAt).toISOString(),
-    storyText: summarizeText(item.content, 1_000),
-    summary: summarizeText(item.contentSnippet ?? item.content, 280),
+    storyText: summarizeText(storyContent, 1_000),
+    summary: summarizeText(storyContent, 280),
     commentCount: 0,
     rankingScore: buildRankingScore(source, publishedAt, points),
     sourcePriority: categoryPriority[source.category],
   };
 };
 
+const fetchStoriesForSource = async (source: FeedSource): Promise<RankedStory[]> => {
+  try {
+    const feed = await withTimeout(parser.parseURL(source.url), feedRequestTimeoutMs, source.url);
+    const resolvedSource =
+      source.autoTitle && feed.title?.trim() ? { ...source, title: feed.title.trim() } : source;
+
+    return feed.items
+      .slice(0, 24)
+      .map((item) => normalizeStory(resolvedSource, item))
+      .filter((story): story is RankedStory => story !== null);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown feed failure.';
+    console.warn(`Skipping feed ${source.url}: ${message}`);
+    return [];
+  }
+};
+
 export const refreshStoriesFromRss = async () => {
   const normalizedByUrl = new Map<string, RankedStory>();
 
-  for (const source of FEED_SOURCES) {
-    const feed = await parser.parseURL(source.url);
+  for (let idx = 0; idx < FEED_SOURCES.length; idx += feedRequestBatchSize) {
+    const batch = FEED_SOURCES.slice(idx, idx + feedRequestBatchSize);
+    const storiesBySource = await Promise.all(batch.map(fetchStoriesForSource));
 
-    for (const item of feed.items.slice(0, 24)) {
-      const normalized = normalizeStory(source, item);
-      if (!normalized) {
-        continue;
-      }
-
-      const existing = normalizedByUrl.get(normalized.url);
-      if (!existing || normalized.sourcePriority > existing.sourcePriority) {
-        normalizedByUrl.set(normalized.url, normalized);
+    for (const stories of storiesBySource) {
+      for (const normalized of stories) {
+        const existing = normalizedByUrl.get(normalized.url);
+        if (!existing || normalized.sourcePriority > existing.sourcePriority) {
+          normalizedByUrl.set(normalized.url, normalized);
+        }
       }
     }
   }
 
-  const stories = [...normalizedByUrl.values()]
-    .sort((left, right) => right.rankingScore - left.rankingScore)
-    .slice(0, 80);
+  const stories = [...normalizedByUrl.values()].sort(
+    (left, right) => right.rankingScore - left.rankingScore,
+  );
 
   await Promise.all(
     stories.map(async ({ sourcePriority: _sourcePriority, ...story }) => upsertStory(story)),
   );
 
-  return stories.length;
+  const indexedStoryCount = await syncSearchIndexFromStoriesTable();
+
+  return {
+    storyCount: stories.length,
+    indexedStoryCount,
+  };
 };
