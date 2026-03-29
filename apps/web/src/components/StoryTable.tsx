@@ -42,9 +42,6 @@ export const StoryTable = ({
             <td />
             <td className="subtext">
               <span className="subline">
-                <span className="score" id={`score_${story.id}`}>
-                  {story.points} points
-                </span>{' '}
                 by <span className="hnuser">{story.submittedBy}</span>{' '}
                 <span className="age" title={story.publishedAt}>
                   <Link to={`/item/${story.id}`}>{formatAge(story.publishedAt)}</Link>

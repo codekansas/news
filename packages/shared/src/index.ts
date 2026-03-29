@@ -24,7 +24,6 @@ export type Story = {
   sourceTitle: string;
   sourceCategory: FeedSource['category'];
   submittedBy: string;
-  points: number;
   publishedAt: string;
   storyText: string | null;
   summary: string | null;
@@ -459,11 +458,6 @@ export const pickRandomSubmitter = (seedInput: string): string => {
   const noun = submitterNouns[Math.floor(random() * submitterNouns.length)];
   const suffix = Math.floor(random() * 90 + 10);
   return `${adjective}${noun}${suffix}`;
-};
-
-export const pickRandomPoints = (seedInput: string): number => {
-  const random = mulberry32(hashString(`${seedInput}:points`));
-  return Math.floor(random() * 480) + 20;
 };
 
 export const buildStoryId = (sourceKey: string, canonicalUrl: string): string =>

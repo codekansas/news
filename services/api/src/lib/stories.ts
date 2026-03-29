@@ -295,7 +295,6 @@ export const upsertStory = async (story: Story) => {
             #sourceTitle = :sourceTitle,
             #sourceCategory = :sourceCategory,
             #submittedBy = :submittedBy,
-            #points = :points,
             #publishedAt = :publishedAt,
             #storyText = :storyText,
             #summary = :summary,
@@ -304,6 +303,7 @@ export const upsertStory = async (story: Story) => {
             #publishedAtMs = :publishedAtMs,
             #publicationStatus = :publicationStatus,
             #commentCount = if_not_exists(#commentCount, :zero)
+        REMOVE #points
       `,
       ExpressionAttributeNames: {
         '#commentCount': 'commentCount',
@@ -333,7 +333,6 @@ export const upsertStory = async (story: Story) => {
         ':sourceTitle': story.sourceTitle,
         ':sourceCategory': story.sourceCategory,
         ':submittedBy': story.submittedBy,
-        ':points': story.points,
         ':publishedAt': story.publishedAt,
         ':publishedAtMs': publishedAtMs,
         ':publicationDate': publicationDate,
