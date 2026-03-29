@@ -16,7 +16,7 @@
 
 - `/` renders a pixel-faithful HN front page shell populated from DynamoDB.
 - `/item/:storyId` renders the HN item page shell, including nested comments and inline replies.
-- RSS refresh writes deterministic random points and pseudonymous submitters so the front page feels like HN without pretending to be real HN activity.
+- RSS refresh writes pseudonymous submitters and ranks the front page chronologically so the site keeps the HN visual language without inventing vote totals.
 - The frontend loads `runtime-config.json` at runtime, so the same build artifact can be deployed locally or in AWS without rebuild-time secrets.
 
 ## Local commands

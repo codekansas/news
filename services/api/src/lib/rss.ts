@@ -3,7 +3,6 @@ import {
   FEED_SOURCES,
   buildSiteLabel,
   buildStoryId,
-  pickRandomPoints,
   pickRandomSubmitter,
   stripHtml,
 } from '@news/shared';
@@ -75,12 +74,7 @@ const extractStoryContent = (source: FeedSource, item: ParsedItem) => {
   return rawContent.replace(/<hr[\s\S]*$/i, '').trim();
 };
 
-const buildRankingScore = (source: FeedSource, publishedAt: string, points: number): number => {
-  const publishedAtMs = new Date(publishedAt).getTime();
-  return (
-    categoryPriority[source.category] * 10_000_000_000_000 + points * 10_000_000_000 + publishedAtMs
-  );
-};
+const buildRankingScore = (publishedAt: string): number => new Date(publishedAt).getTime();
 
 const withTimeout = async <TValue>(
   promise: Promise<TValue>,
@@ -126,10 +120,10 @@ const normalizeStory = (source: FeedSource, item: ParsedItem): RankedStory | nul
   }
 
   const publishedAt = item.isoDate ?? item.pubDate ?? new Date().toISOString();
+  const normalizedPublishedAt = new Date(publishedAt).toISOString();
   const { siteLabel, siteUrl } = buildSiteLabel(canonicalUrl);
   const storyId = buildStoryId(source.key, canonicalUrl);
   const seedInput = `${source.key}:${canonicalUrl}`;
-  const points = pickRandomPoints(seedInput);
   const storyContent = extractStoryContent(source, item);
 
   return {
@@ -142,12 +136,11 @@ const normalizeStory = (source: FeedSource, item: ParsedItem): RankedStory | nul
     sourceTitle: source.title,
     sourceCategory: source.category,
     submittedBy: pickRandomSubmitter(seedInput),
-    points,
-    publishedAt: new Date(publishedAt).toISOString(),
+    publishedAt: normalizedPublishedAt,
     storyText: summarizeText(storyContent, 1_000),
     summary: summarizeText(storyContent, 280),
     commentCount: 0,
-    rankingScore: buildRankingScore(source, publishedAt, points),
+    rankingScore: buildRankingScore(normalizedPublishedAt),
     sourcePriority: categoryPriority[source.category],
   };
 };

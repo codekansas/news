@@ -1,12 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { FEED_SOURCES, buildCommentTree, buildStoryId, pickRandomPoints } from './index';
-
-describe('pickRandomPoints', () => {
-  test('is deterministic for a given seed', () => {
-    expect(pickRandomPoints('story-1')).toBe(pickRandomPoints('story-1'));
-    expect(pickRandomPoints('story-1')).not.toBe(pickRandomPoints('story-2'));
-  });
-});
+import { FEED_SOURCES, buildCommentTree, buildStoryId } from './index';
 
 describe('buildStoryId', () => {
   test('namespaces the id by source', () => {
